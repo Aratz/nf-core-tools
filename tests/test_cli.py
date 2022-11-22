@@ -87,6 +87,28 @@ class TestCli(unittest.TestCase):
         # Checks that -v was considered valid
         assert "No such option: -v" not in nf_core.utils.strip_ansi_codes(result.output)
 
+    @mock.patch("nf_core.create.PipelineCreate", side_effect=UserWarning)
+    def test_cli_logfile(self, mock_create):
+        logfile = tempfile.NamedTemporaryFile(mode="r")
+
+        params = {
+            "name": "pipeline name",
+            "description": "pipeline description",
+            "author": "Kalle Anka",
+            "version": "1.2.3",
+            "no-git": None,
+            "force": None,
+            "outdir": "/path/outdir",
+            "template-yaml": "file.yaml",
+            "plain": None,
+        }
+
+        cmd = ["--log-file", logfile.name, "create"] + self.assemble_params(params)
+        result = self.invoke_cli(cmd)
+
+        assert result.exit_code == 1
+        assert "ERROR" in logfile.read()
+
     @mock.patch("nf_core.list.list_workflows", return_value="pipeline test list")
     def test_cli_list(self, mock_list_workflows):
         """Test nf-core pipelines are listed and cli parameters are passed on."""
