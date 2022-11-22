@@ -35,6 +35,12 @@ jobs:
           python -m pip install --upgrade pip -r requirements-dev.txt
           pip install -e .
 
+      - name: Use latest version of git wrt. the Ubuntu image in use
+        run: |
+          sudo apt remove git git-man
+          sudo add-apt-repository --remove ppa:git-core/ppa
+          sudo apt install git
+
       - name: Install Nextflow
         uses: nf-core/setup-nextflow@v1
         with:
