@@ -29,6 +29,15 @@ def test_header_outdated(mock_check_outdated, mock_nf_core_cli, capsys):
     assert "There is a new version of nf-core/tools available! (dummy_version)" in captured.err
 
 
+@mock.patch("nf_core.__main__.nf_core_cli")
+@mock.patch("nf_core.utils.check_if_outdated", side_effect=Exception())
+def test_header_error(mock_check_outdated, mock_nf_core_cli, capsys):
+    """Test the main launch function with log file"""
+    nf_core.__main__.run_nf_core()
+    captured = capsys.readouterr()
+    assert "Could not check latest version" in captured.err
+
+
 class TestCli(unittest.TestCase):
     """Class for testing the commandline interface"""
 

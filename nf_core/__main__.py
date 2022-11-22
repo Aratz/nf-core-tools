@@ -99,7 +99,10 @@ def run_nf_core():
                     highlight=False,
                 )
         except Exception as e:
-            log.debug(f"Could not check latest version: {e}")
+            stderr.print(
+                f"[bold bright_red]    Could not check latest version ({e})",
+                highlight=False,
+            )
         stderr.print("\n")
     # Launch the click cli
     nf_core_cli(auto_envvar_prefix="NFCORE")
