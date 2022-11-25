@@ -15,12 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pytest:
+  select-strategy:
     runs-on: ubuntu-latest
+    outputs:
+      python-versions: ${{ steps.set-matrix.outputs.python-versions }}
+    steps:
+      - id: set-matrix
+        run: |
+          if [ ${{ github.event_name }} == "release" ]; then
+            echo "::set-output name=python-versions::[3.7,3.8,3.9,3.10,3.11]"
+          else
+            echo "::set-output name=python-versions::[3.7,3.11]"
+          fi
+  pytest:
+    needs: select-strategy
     strategy:
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
-
+        python-version: ${{ fromJson(needs.select-strategy.outputs.python-versions) }}
+        os: [ubuntu-20.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
         name: Check out source-code repository
@@ -34,6 +47,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip -r requirements-dev.txt
           pip install -e .
+
+      - name: Use latest version of git wrt. the Ubuntu image in use
+        run: |
+          sudo apt remove git git-man
+          sudo add-apt-repository --remove ppa:git-core/ppa
+          sudo apt install git
 
       - name: Install Nextflow
         uses: nf-core/setup-nextflow@v1
