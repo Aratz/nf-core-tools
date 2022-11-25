@@ -23,9 +23,9 @@ jobs:
       - id: set-matrix
         run: |
           if [ ${{ github.event_name }} == "release" ]; then
-            echo "::set-output name=python-versions::[\"3.7\",\"3.8\",\"3.9\",\"3.10\",\"3.11\"]"
+            echo "python-versions=[\"3.7\",\"3.8\",\"3.9\",\"3.10\",\"3.11\"]" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=python-versions::[\"3.7\",\"3.11\"]"
+            echo "python-versions=[\"3.7\",\"3.11\"]" >> $GITHUB_OUTPUT
           fi
   pytest:
     needs: select-strategy
