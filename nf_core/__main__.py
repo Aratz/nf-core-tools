@@ -395,38 +395,6 @@ def modules(ctx, git_remote, branch, no_pull):
     ctx.obj["modules_repo_no_pull"] = no_pull
 
 
-# nf-core subworkflows click command
-@nf_core_cli.group()
-@click.option(
-    "-g",
-    "--git-remote",
-    type=str,
-    default=nf_core.modules.modules_repo.NF_CORE_MODULES_REMOTE,
-    help="Remote git repo to fetch files from",
-)
-@click.option("-b", "--branch", type=str, default=None, help="Branch of git repository hosting modules.")
-@click.option(
-    "-N",
-    "--no-pull",
-    is_flag=True,
-    default=False,
-    help="Do not pull in latest changes to local clone of modules repository.",
-)
-@click.pass_context
-def subworkflows(ctx, git_remote, branch, no_pull):
-    """
-    Commands to manage Nextflow DSL2 subworkflows (tool wrappers).
-    """
-    # ensure that ctx.obj exists and is a dict (in case `cli()` is called
-    # by means other than the `if` block below)
-    ctx.ensure_object(dict)
-
-    # Place the arguments in a context object
-    ctx.obj["modules_repo_url"] = git_remote
-    ctx.obj["modules_repo_branch"] = branch
-    ctx.obj["modules_repo_no_pull"] = no_pull
-
-
 # nf-core modules list subcommands
 @modules.group()
 @click.pass_context
@@ -901,6 +869,38 @@ def test_module(ctx, tool, no_prompts, pytest_args):
     except (UserWarning, LookupError) as e:
         log.critical(e)
         sys.exit(1)
+
+
+# nf-core subworkflows click command
+@nf_core_cli.group()
+@click.option(
+    "-g",
+    "--git-remote",
+    type=str,
+    default=nf_core.modules.modules_repo.NF_CORE_MODULES_REMOTE,
+    help="Remote git repo to fetch files from",
+)
+@click.option("-b", "--branch", type=str, default=None, help="Branch of git repository hosting modules.")
+@click.option(
+    "-N",
+    "--no-pull",
+    is_flag=True,
+    default=False,
+    help="Do not pull in latest changes to local clone of modules repository.",
+)
+@click.pass_context
+def subworkflows(ctx, git_remote, branch, no_pull):
+    """
+    Commands to manage Nextflow DSL2 subworkflows (tool wrappers).
+    """
+    # ensure that ctx.obj exists and is a dict (in case `cli()` is called
+    # by means other than the `if` block below)
+    ctx.ensure_object(dict)
+
+    # Place the arguments in a context object
+    ctx.obj["modules_repo_url"] = git_remote
+    ctx.obj["modules_repo_branch"] = branch
+    ctx.obj["modules_repo_no_pull"] = no_pull
 
 
 # nf-core subworkflows create
