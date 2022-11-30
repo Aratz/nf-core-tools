@@ -353,6 +353,20 @@ class TestCli(unittest.TestCase):
 
     @mock.patch("nf_core.utils.is_pipeline_directory")
     @mock.patch("nf_core.lint.run_linting")
+    def test_lint_failed(self, mock_lint, mock_is_pipeline):
+        """Test nf-core lint returns 1 when failing"""
+        mock_lint_results = (mock.MagicMock, mock.MagicMock)
+        mock_lint_results[0].failed = [None]
+        mock_lint_results[1].failed = [None]
+        mock_lint.return_value = mock_lint_results
+
+        cmd = ["lint"]
+        result = self.invoke_cli(cmd)
+
+        assert result.exit_code == 1
+
+    @mock.patch("nf_core.utils.is_pipeline_directory")
+    @mock.patch("nf_core.lint.run_linting")
     def test_lint_log_assert_error(self, mock_lint, mock_is_pipeline):
         """Test nf-core lint logs assertion errors"""
         error_txt = "AssertionError has been raised"
@@ -380,3 +394,7 @@ class TestCli(unittest.TestCase):
         assert result.exit_code == 1
         assert error_txt in captured_logs.output[-1]
         assert captured_logs.records[-1].levelname == "ERROR"
+
+    from .cli.modules import (
+            test_
+    )
