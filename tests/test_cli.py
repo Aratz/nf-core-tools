@@ -396,5 +396,5 @@ class TestCli(unittest.TestCase):
         assert captured_logs.records[-1].levelname == "ERROR"
 
     from .cli.modules import (
-            test_
+        test_modules_list_remote,
     )
