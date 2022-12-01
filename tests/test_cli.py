@@ -397,4 +397,5 @@ class TestCli(unittest.TestCase):
 
     from .cli.modules import (
         test_modules_list_remote,
+        test_modules_list_local,
     )
