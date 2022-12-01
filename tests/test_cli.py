@@ -384,7 +384,7 @@ class TestCli(unittest.TestCase):
     @mock.patch("nf_core.lint.run_linting")
     def test_lint_log_user_warning(self, mock_lint, mock_is_pipeline):
         """Test nf-core lint logs assertion errors"""
-        error_txt = "AssertionError has been raised"
+        error_txt = "UserWarning has been raised"
         mock_lint.side_effect = UserWarning(error_txt)
 
         cmd = ["lint"]
