@@ -70,6 +70,25 @@ class TestCli(unittest.TestCase):
         """
         return self.runner.invoke(nf_core.__main__.nf_core_cli, cmd)
 
+    def assert_error_is_caught_and_logged(self, cmd, patch, exception, expected_log_level):
+        """Test error is caught and reported in the logs.
+
+        Args:
+            cmd (list): nf-core command to execute
+            patch (str): function that should raise the exception
+            exception (Exception): exception to raise
+            expected_log_level (str): level at which the exception should be logged
+        """
+        mock_module = mock.patch(patch, side_effect=exception)
+
+        with mock_module, self.assertLogs() as captured_logs:
+            result = self.invoke_cli(cmd)
+
+        print(captured_logs.output)
+        assert result.exit_code == 1
+        assert str(exception) in captured_logs.output[-1]
+        assert captured_logs.records[-1].levelname == expected_log_level
+
     def test_cli_help(self):
         """Test the main launch function with --help"""
         result = self.invoke_cli(["--help"])
@@ -398,4 +417,6 @@ class TestCli(unittest.TestCase):
     from .cli.modules import (
         test_modules_list_remote,
         test_modules_list_local,
+        test_critical_errors_are_caught_and_logged,
+        test_regular_errors_are_caught_and_logged,
     )

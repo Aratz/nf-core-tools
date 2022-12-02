@@ -657,11 +657,8 @@ def create_module(ctx, tool, dir, author, label, meta, no_meta, force, conda_nam
             dir, tool, author, label, has_meta, force, conda_name, conda_package_version
         )
         module_create.create()
-    except UserWarning as e:
+    except (UserWarning, LookupError) as e:
         log.critical(e)
-        sys.exit(1)
-    except LookupError as e:
-        log.error(e)
         sys.exit(1)
 
 
