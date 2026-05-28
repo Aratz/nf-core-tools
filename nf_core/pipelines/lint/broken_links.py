@@ -25,7 +25,15 @@ def broken_links(self):
 
     All other HTTP outcomes (``200``, ``301``, ``403``, ``5xx``, ...) and all
     network errors (timeouts, DNS failures, TLS errors, ...) are passed
-    silently — only confirmed ``404`` responses are reported.
+    silently — only confirmed ``404`` responses are reported. Each request
+    uses a 5-second timeout so an unresponsive server can never hang the
+    linter.
+
+    Some URLs in a freshly templated nf-core pipeline are only expected to
+    resolve **after** the pipeline's first release (for example
+    ``https://nf-co.re/<short_name>/...``). On these unreleased pipelines, 404s
+    on any markdown URL matching the ``nf-co.re/<short_name>/`` prefix are
+    demoted from warnings to **ignored** entries with an explanatory message.
 
     .. tip:: You can choose to ignore this lint test by editing the file called
         ``.nf-core.yml`` in the root of your pipeline and setting the test to false:
@@ -54,6 +62,9 @@ def broken_links(self):
     cfg = self.lint_config.get("broken_links", None) if self.lint_config is not None else None
     ignore_entries = cfg if isinstance(cfg, list) else []
 
+    pre_release = _is_pre_release(self)
+    post_release_prefixes = _post_release_prefixes(self) if pre_release else []
+
     md_files = [fn for fn in self.list_files() if str(fn).lower().endswith(".md")]
 
     occurrences: list[tuple[str, int, str]] = []
@@ -76,7 +87,11 @@ def broken_links(self):
         if any(url.startswith(prefix) for prefix in ignore_entries):
             ignored.append(f"Ignoring URL `{url}` at `{rel}:{lineno}`")
             continue
+        if any(url.startswith(prefix) for prefix in post_release_prefixes):
+            ignored.append(f"Pre-release URL not yet live (expected): `{url}` at `{rel}:{lineno}`")
+            continue
         if url not in status_cache:
+            log.debug(f"Testing {url} from {rel}:{lineno}")
             status_cache[url] = _is_404(url)
         if status_cache[url]:
             warned.append(f"Broken link (404): `{url}` at `{rel}:{lineno}`")
@@ -99,3 +114,45 @@ def _is_404(url: str) -> bool:
         log.debug(f"Unable to connect to url '{url}' due to error: {e}")
         return False
     return response.status_code == 404
+
+
+def _is_pre_release(lint_obj) -> bool:
+    """Heuristic for "this pipeline has not had its first release yet".
+
+    Probes ``https://nf-co.re/<short_name>/`` with a single HEAD request and
+    returns True only if that URL returns HTTP ``404`` — i.e. the pipeline's
+    nf-co.re page does not exist yet, which we treat as "pre-release".
+
+    Returns False in all other cases:
+
+    * ``manifest.name`` is missing or does not look like ``<org>/<name>``,
+    * the probe URL returned ``200``/``3xx`` (page already live),
+    * the probe URL raised a network error / timeout (we cannot verify, so
+      we err on the side of not silently hiding 404 warnings).
+
+    When True, 404s on the matching nf-core URL prefix are demoted from
+    ``warned`` to ``ignored`` in :func:`broken_links`.
+    """
+    nf_config = getattr(lint_obj, "nf_config", None) or {}
+    name = (nf_config.get("manifest.name", "") or "").strip(" '\"")
+    short = name.split("/", 1)[1] if "/" in name else ""
+    if not short:
+        return False
+    probe_url = f"https://nf-co.re/{short}/"
+    pre_release = _is_404(probe_url)
+    log.debug(
+        f"Pre-release probe `{probe_url}` -> {'pre-release (404)' if pre_release else 'released (or unreachable)'}"
+    )
+    return pre_release
+
+
+def _post_release_prefixes(lint_obj) -> list[str]:
+    """URL prefixes that only become live after the pipeline's first release.
+
+    Currently this is just the pipeline's own page on ``nf-co.re``, which is
+    generated when the pipeline is registered + first released.
+    """
+    nf_config = getattr(lint_obj, "nf_config", None) or {}
+    name = (nf_config.get("manifest.name", "") or "").strip(" '\"")
+    short = name.split("/", 1)[1] if "/" in name else ""
+    return [f"https://nf-co.re/{short}/"] if short else []

@@ -201,3 +201,50 @@ class TestLintBrokenLinks(TestLint):
         assert len(b_warns) == 1
         assert "docs/double.md:1" in a_warns[0]
         assert "docs/double.md:1" in b_warns[0]
+
+    # ------------------------------------------------------------------
+    # Pre-release auto-skip behaviour.
+    #
+    # The test pipeline is created as ``nf-core/testpipeline`` (see
+    # ``create_tmp_pipeline``), so the probe URL derived from
+    # ``manifest.name`` is ``https://nf-co.re/testpipeline/``. A pre-release
+    # state is simulated by making that probe URL 404; a released state by
+    # leaving it out of the dead-set (so the default 200 is returned).
+    # ------------------------------------------------------------------
+    PROBE_URL = "https://nf-co.re/testpipeline/"
+
+    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    def test_pre_release_demotes_nf_core_re_404_to_ignored(self, mock_head):
+        """Probe URL 404 + 404 on ``https://nf-co.re/<short>/...`` -> ignored, not warned."""
+        pre_release_url = "https://nf-co.re/testpipeline/results"
+        mock_head.side_effect = _selective_head({self.PROBE_URL, pre_release_url})
+        self._write_md("docs/pre.md", f"[results]({pre_release_url})\n")
+
+        result = self._run_check()
+
+        assert not any(pre_release_url in w for w in result["warned"])
+        assert any(pre_release_url in m and "Pre-release" in m for m in result["ignored"])
+
+    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    def test_pre_release_does_not_demote_unrelated_404(self, mock_head):
+        """Probe URL 404 (pre-release) + 404 on an unrelated URL -> still warned."""
+        unrelated = "https://example.com/dead"
+        mock_head.side_effect = _selective_head({self.PROBE_URL, unrelated})
+        self._write_md("docs/u.md", f"[bad]({unrelated})\n")
+
+        result = self._run_check()
+
+        assert any(unrelated in w for w in result["warned"])
+
+    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    def test_released_pipeline_warns_on_nf_core_re_404(self, mock_head):
+        """Probe URL 200 (released) + 404 on ``https://nf-co.re/<short>/...`` -> still warned."""
+        sub_url = "https://nf-co.re/testpipeline/results"
+        # Probe URL omitted from the dead-set -> returns 200 -> pipeline is "released".
+        mock_head.side_effect = _selective_head({sub_url})
+        self._write_md("docs/sub.md", f"[results]({sub_url})\n")
+
+        result = self._run_check()
+
+        assert any(sub_url in w for w in result["warned"])
+        assert not any(sub_url in m and "Pre-release" in m for m in result["ignored"])
