@@ -33,6 +33,7 @@ from .actions_awsfulltest import actions_awsfulltest
 from .actions_awstest import actions_awstest
 from .actions_nf_test import actions_nf_test
 from .actions_schema_validation import actions_schema_validation
+from .broken_links import broken_links
 from .configs import base_config, modules_config
 from .container_configs import container_configs
 from .files_exist import files_exist
@@ -87,6 +88,7 @@ class PipelineLint(nf_core.utils.Pipeline):
     actions_nf_test = actions_nf_test
     actions_schema_validation = actions_schema_validation
     base_config = base_config
+    broken_links = broken_links
     modules_config = modules_config
     container_configs = container_configs
     files_exist = files_exist
@@ -160,6 +162,7 @@ class PipelineLint(nf_core.utils.Pipeline):
             "schema_description",
             "actions_schema_validation",
             "merge_markers",
+            "broken_links",
             "modules_json",
             "multiqc_config",
             "modules_structure",

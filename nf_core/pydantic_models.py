@@ -93,6 +93,8 @@ class NFCoreYamlLintConfig(BaseModel):
     """ List of modules that should not be changed """
     merge_markers: bool | list[str] | None = None
     """ List of files that should not contain merge markers """
+    broken_links: bool | list[str] | None = None
+    """ List of URL prefixes and/or markdown file paths to ignore when checking for broken (HTTP 404) links """
     nextflow_config: bool | list[str | dict[str, list[str]]] | None = None
     """ List of Nextflow config files that should not be changed """
     nf_test_content: bool | list[str] | None = None
