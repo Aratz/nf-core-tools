@@ -8,6 +8,7 @@ log = logging.getLogger(__name__)
 
 URL_RE = re.compile(r"https?://[^\s<>\"'\)\]\}]+")
 URL_TRAILING_PUNCTUATION = ".,;:'\")]}>"
+REQUEST_TIMEOUT: float = 5
 
 
 def broken_links(self):
@@ -93,7 +94,7 @@ def _is_404(url: str) -> bool:
     only confirmed 404 responses trigger a warning in the calling lint test.
     """
     try:
-        response = requests.head(url, stream=True, allow_redirects=True)
+        response = requests.head(url, stream=True, allow_redirects=True, timeout=REQUEST_TIMEOUT)
     except (requests.exceptions.RequestException, sqlite3.InterfaceError) as e:
         log.debug(f"Unable to connect to url '{url}' due to error: {e}")
         return False
