@@ -14,7 +14,8 @@ REQUEST_TIMEOUT: float = 5
 def broken_links(self):
     """Check that external links in markdown files are not broken (HTTP 404).
 
-    This lint test scans every Markdown (``.md``) file tracked by the pipeline
+    This lint test scans the top-level ``README.md`` and every Markdown
+    (``.md``) file under the ``docs/`` directory tracked by the pipeline
     repository, extracts all ``http://`` / ``https://`` URLs from each line,
     and issues a **warning** for every occurrence of a URL that returns an
     HTTP ``404`` status code.
@@ -65,7 +66,6 @@ def broken_links(self):
     pre_release = _is_pre_release(self)
     post_release_prefixes = _post_release_prefixes(self) if pre_release else []
 
-    md_files = [fn for fn in self.list_files() if str(fn).lower().endswith(".md")]
 
     occurrences: list[tuple[str, int, str]] = []
     for md in md_files:
@@ -83,6 +83,7 @@ def broken_links(self):
             log.debug(f"Could not open file {md} in broken_links lint test")
 
     status_cache: dict[str, bool] = {}
+    md_files = [fn for fn in self.list_files() if _is_scanned_markdown(fn.relative_to(self.wf_path))]
     for rel, lineno, url in occurrences:
         if any(url.startswith(prefix) for prefix in ignore_entries):
             ignored.append(f"Ignoring URL `{url}` at `{rel}:{lineno}`")
@@ -100,6 +101,16 @@ def broken_links(self):
         passed.append(f"No broken (404) links found in markdown files ({len(md_files)} files scanned)")
 
     return {"passed": passed, "failed": [], "warned": warned, "ignored": ignored}
+
+
+def _is_scanned_markdown(rel_path) -> bool:
+    """Return True for markdown files this check should scan.
+
+    Limits the scan to the top-level ``README.md`` and any ``.md`` file under
+    the ``docs/`` directory, rather than every markdown file in the repo.
+    """
+    parts = rel_path.parts
+    return rel_path.suffix.lower() == ".md" and (parts[0] == "docs" or parts[0] == "README.md")
 
 
 def _is_404(url: str) -> bool:
