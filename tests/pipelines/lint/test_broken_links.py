@@ -17,19 +17,30 @@ def _resp(status_code: int) -> MagicMock:
     return response
 
 
-def _selective_head(dead_urls: set[str]):
-    """Return a ``requests.Session.head`` side-effect that returns 404 for the
-    given URLs and 200 for everything else.
+def _selective_status(dead_urls: set[str]):
+    """Return a ``requests.Session.head``/``get`` side-effect that returns 404
+    for the given URLs and 200 for everything else.
 
     Test markdown files added by the tests use URLs under ``https://example.com/``
     or ``https://ignore.me/``. Any URLs already present in the nf-core template
     (e.g. in ``README.md``) are answered with 200 so they don't pollute results.
     """
 
-    def _head(url, *args, **kwargs):
+    def _request(url, *args, **kwargs):
         return _resp(404 if url in dead_urls else 200)
 
-    return _head
+    return _request
+
+
+def _set_dead(mock_head, mock_get, dead_urls: set[str]) -> None:
+    """Configure both the HEAD and GET mocks to 404 on ``dead_urls``.
+
+    Both verbs share the same behaviour because ``_is_404`` confirms a HEAD 404
+    with a GET before reporting a link as broken.
+    """
+    side = _selective_status(set(dead_urls))
+    mock_head.side_effect = side
+    mock_get.side_effect = side
 
 
 class TestLintBrokenLinks(TestLint):
@@ -53,11 +64,12 @@ class TestLintBrokenLinks(TestLint):
         lint_obj._load()
         return lint_obj.broken_links()
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_404_url_produces_one_warning(self, mock_head):
+    def test_404_url_produces_one_warning(self, mock_head, mock_get):
         """A single 404 URL in a markdown file produces one warning citing file:line."""
         dead = "https://example.com/dead"
-        mock_head.side_effect = _selective_head({dead})
+        _set_dead(mock_head, mock_get, {dead})
         self._write_md("docs/dead.md", f"Click [here]({dead}) please.\n")
 
         result = self._run_check()
@@ -67,37 +79,59 @@ class TestLintBrokenLinks(TestLint):
         assert "docs/dead.md:1" in dead_warnings[0]
         assert result["failed"] == []
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_200_url_does_not_warn(self, mock_head):
+    def test_head_404_but_get_200_does_not_warn(self, mock_head, mock_get):
+        """A HEAD 404 confirmed as 200 by GET is not reported (e.g. bsky.app)."""
+        url = "https://bsky.app/profile/nf-co.re"
+        # HEAD says 404, GET says 200 -> reachable -> no warning.
+        mock_head.side_effect = _selective_status({url})
+        mock_get.side_effect = _selective_status(set())
+        self._write_md("docs/bsky.md", f"[bluesky]({url})\n")
+
+        result = self._run_check()
+
+        assert not any(url in w for w in result["warned"])
+        # GET must have been used to confirm the HEAD 404.
+        get_urls = [c.args[0] for c in mock_get.call_args_list if c.args]
+        assert url in get_urls
+
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
+    def test_200_url_does_not_warn(self, mock_head, mock_get):
         """A 200 URL produces no warning for that URL."""
         url = "https://example.com/ok"
-        mock_head.side_effect = _selective_head(set())
+        _set_dead(mock_head, mock_get, set())
         self._write_md("docs/ok.md", f"All good: {url}\n")
 
         result = self._run_check()
 
         assert not any(url in w for w in result["warned"])
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_network_error_does_not_warn(self, mock_head):
+    def test_network_error_does_not_warn(self, mock_head, mock_get):
         """Network exceptions are silently passed (strict-404 semantics)."""
         url = "https://example.com/unreachable"
         mock_head.side_effect = requests.exceptions.ConnectionError("boom")
+        mock_get.side_effect = requests.exceptions.ConnectionError("boom")
         self._write_md("docs/flaky.md", f"Maybe broken: {url}\n")
 
         result = self._run_check()
 
         assert result["warned"] == []
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_500_does_not_warn(self, mock_head):
+    def test_500_does_not_warn(self, mock_head, mock_get):
         """Non-404 error responses are silently passed."""
         url = "https://example.com/oops"
 
-        def _head(u, *args, **kwargs):
+        def _request(u, *args, **kwargs):
             return _resp(500 if u == url else 200)
 
-        mock_head.side_effect = _head
+        mock_head.side_effect = _request
+        mock_get.side_effect = _request
         self._write_md("docs/server.md", f"[server]({url})\n")
 
         result = self._run_check()
@@ -120,11 +154,12 @@ class TestLintBrokenLinks(TestLint):
         ignored_tests = [name for name, _ in lint_obj.ignored]
         assert "broken_links" in ignored_tests
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_ignore_url_prefix(self, mock_head):
+    def test_ignore_url_prefix(self, mock_head, mock_get):
         """URLs matching an entry in ``lint.broken_links`` are reported as ignored, not warned, and are not fetched."""
         dead = "https://ignore.me/path"
-        mock_head.side_effect = _selective_head({dead})
+        _set_dead(mock_head, mock_get, {dead})
         self._write_md("docs/ignored.md", f"[bad]({dead})\n")
 
         valid_yaml = """
@@ -142,11 +177,12 @@ class TestLintBrokenLinks(TestLint):
         called_urls = [c.args[0] for c in mock_head.call_args_list if c.args]
         assert dead not in called_urls
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_ignore_markdown_file(self, mock_head):
+    def test_ignore_markdown_file(self, mock_head, mock_get):
         """Markdown files listed in ``lint.broken_links`` are skipped entirely."""
         dead = "https://example.com/dead"
-        mock_head.side_effect = _selective_head({dead})
+        _set_dead(mock_head, mock_get, {dead})
         self._write_md("docs/skipme.md", f"[bad]({dead})\n")
 
         valid_yaml = """
@@ -164,11 +200,12 @@ class TestLintBrokenLinks(TestLint):
         called_urls = [c.args[0] for c in mock_head.call_args_list if c.args]
         assert dead not in called_urls
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_same_dead_url_twice_produces_two_warnings_one_request(self, mock_head):
-        """Duplicate dead URL across two files -> two warnings, but only one HTTP call for that URL."""
+    def test_same_dead_url_twice_produces_two_warnings_one_check(self, mock_head, mock_get):
+        """Duplicate dead URL across two files -> two warnings, but only one network check for that URL."""
         dead = "https://example.com/dead"
-        mock_head.side_effect = _selective_head({dead})
+        _set_dead(mock_head, mock_get, {dead})
         self._write_md("docs/a.md", f"[bad]({dead})\n")
         self._write_md("docs/b.md", f"see [bad]({dead}) here\n")
 
@@ -179,15 +216,19 @@ class TestLintBrokenLinks(TestLint):
         joined = " ".join(dead_warnings)
         assert "docs/a.md:1" in joined
         assert "docs/b.md:1" in joined
-        dead_calls = [c for c in mock_head.call_args_list if c.args and c.args[0] == dead]
-        assert len(dead_calls) == 1
+        # The URL is only resolved once (one HEAD + one confirming GET), despite two occurrences.
+        head_calls = [c for c in mock_head.call_args_list if c.args and c.args[0] == dead]
+        get_calls = [c for c in mock_get.call_args_list if c.args and c.args[0] == dead]
+        assert len(head_calls) == 1
+        assert len(get_calls) == 1
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_two_dead_urls_on_same_line(self, mock_head):
+    def test_two_dead_urls_on_same_line(self, mock_head, mock_get):
         """Two URLs on the same line each get a warning citing the same line number."""
         url_a = "https://example.com/a"
         url_b = "https://example.com/b"
-        mock_head.side_effect = _selective_head({url_a, url_b})
+        _set_dead(mock_head, mock_get, {url_a, url_b})
         self._write_md(
             "docs/double.md",
             f"see [one]({url_a}) and [two]({url_b})\n",
@@ -213,11 +254,12 @@ class TestLintBrokenLinks(TestLint):
     # ------------------------------------------------------------------
     PROBE_URL = "https://nf-co.re/testpipeline/"
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_pre_release_demotes_nf_core_re_404_to_ignored(self, mock_head):
+    def test_pre_release_demotes_nf_core_re_404_to_ignored(self, mock_head, mock_get):
         """Probe URL 404 + 404 on ``https://nf-co.re/<short>/...`` -> ignored, not warned."""
         pre_release_url = "https://nf-co.re/testpipeline/results"
-        mock_head.side_effect = _selective_head({self.PROBE_URL, pre_release_url})
+        _set_dead(mock_head, mock_get, {self.PROBE_URL, pre_release_url})
         self._write_md("docs/pre.md", f"[results]({pre_release_url})\n")
 
         result = self._run_check()
@@ -225,23 +267,25 @@ class TestLintBrokenLinks(TestLint):
         assert not any(pre_release_url in w for w in result["warned"])
         assert any(pre_release_url in m and "Pre-release" in m for m in result["ignored"])
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_pre_release_does_not_demote_unrelated_404(self, mock_head):
+    def test_pre_release_does_not_demote_unrelated_404(self, mock_head, mock_get):
         """Probe URL 404 (pre-release) + 404 on an unrelated URL -> still warned."""
         unrelated = "https://example.com/dead"
-        mock_head.side_effect = _selective_head({self.PROBE_URL, unrelated})
+        _set_dead(mock_head, mock_get, {self.PROBE_URL, unrelated})
         self._write_md("docs/u.md", f"[bad]({unrelated})\n")
 
         result = self._run_check()
 
         assert any(unrelated in w for w in result["warned"])
 
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.get")
     @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
-    def test_released_pipeline_warns_on_nf_core_re_404(self, mock_head):
+    def test_released_pipeline_warns_on_nf_core_re_404(self, mock_head, mock_get):
         """Probe URL 200 (released) + 404 on ``https://nf-co.re/<short>/...`` -> still warned."""
         sub_url = "https://nf-co.re/testpipeline/results"
         # Probe URL omitted from the dead-set -> returns 200 -> pipeline is "released".
-        mock_head.side_effect = _selective_head({sub_url})
+        _set_dead(mock_head, mock_get, {sub_url})
         self._write_md("docs/sub.md", f"[results]({sub_url})\n")
 
         result = self._run_check()

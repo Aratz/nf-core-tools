@@ -28,13 +28,16 @@ def broken_links(self):
     one warning per occurrence, each citing the source file and line number.
     Internally, the network is only contacted once per unique URL.
 
-    All other HTTP outcomes (``200``, ``301``, ``403``, ``5xx``, ...) and all
-    network errors (timeouts, DNS failures, TLS errors, ...) are passed
-    silently — only confirmed ``404`` responses are reported. Each request
-    uses a 5-second timeout so an unresponsive server can never hang the
-    linter. Unique URLs are checked concurrently over a shared
-    :class:`requests.Session` (connection pooling) to keep the check fast even
-    for pipelines with many links.
+    Each URL is first probed with a lightweight HEAD request; a HEAD ``404``
+    is confirmed with a GET before reporting, since some servers mishandle HEAD
+    and return ``404`` for pages that are actually reachable. All other HTTP
+    outcomes (``200``, ``301``, ``403``, ``5xx``, ...) and all network errors
+    (timeouts, DNS failures, TLS errors, ...) are passed silently — only
+    confirmed ``404`` responses are reported. Each request uses a 5-second
+    timeout so an unresponsive server can never hang the linter. Unique URLs
+    are checked concurrently over a shared :class:`requests.Session`
+    (connection pooling) to keep the check fast even for pipelines with many
+    links.
 
     Some URLs in a freshly templated nf-core pipeline are only expected to
     resolve **after** the pipeline's first release (for example
@@ -137,7 +140,13 @@ def _is_scanned_markdown(rel_path) -> bool:
 
 
 def _is_404(url: str, session: requests.Session | None = None) -> bool:
-    """Return True iff a HEAD request to ``url`` returns HTTP 404.
+    """Return True iff ``url`` is confirmed broken (HTTP 404).
+
+    A lightweight HEAD request is tried first. If it returns 404, the result is
+    confirmed with a GET request before reporting the link as broken: some
+    servers mishandle HEAD and return 404 even though the page is reachable
+    with a normal GET (and in a browser). For example
+    https://bsky.app/profile/nf-co.re returns 404 to HEAD but 200 to GET.
 
     Any other status code or any network-layer error returns False, so that
     only confirmed 404 responses trigger a warning in the calling lint test.
@@ -146,8 +155,20 @@ def _is_404(url: str, session: requests.Session | None = None) -> bool:
     across many requests; if omitted, the module-level ``requests`` is used.
     """
     requester = session if session is not None else requests
+    if not _request_is_404(requester.head, url):
+        return False
+    # HEAD said 404 - confirm with GET to avoid false positives from servers
+    # that do not handle HEAD correctly (eg. https://bsky.app/profile/nf-co.re).
+    return _request_is_404(requester.get, url)
+
+
+def _request_is_404(method, url: str) -> bool:
+    """Return True if calling ``method`` (``requests``/session ``head``/``get``) yields a 404.
+
+    Network-layer errors are swallowed and reported as "not a 404".
+    """
     try:
-        response = requester.head(url, stream=True, allow_redirects=True, timeout=REQUEST_TIMEOUT)
+        response = method(url, stream=True, allow_redirects=True, timeout=REQUEST_TIMEOUT)
     except (requests.exceptions.RequestException, sqlite3.InterfaceError) as e:
         log.debug(f"Unable to connect to url '{url}' due to error: {e}")
         return False
