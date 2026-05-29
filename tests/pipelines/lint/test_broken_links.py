@@ -18,8 +18,8 @@ def _resp(status_code: int) -> MagicMock:
 
 
 def _selective_head(dead_urls: set[str]):
-    """Return a ``requests.head`` side-effect that returns 404 for the given URLs
-    and 200 for everything else.
+    """Return a ``requests.Session.head`` side-effect that returns 404 for the
+    given URLs and 200 for everything else.
 
     Test markdown files added by the tests use URLs under ``https://example.com/``
     or ``https://ignore.me/``. Any URLs already present in the nf-core template
@@ -53,7 +53,7 @@ class TestLintBrokenLinks(TestLint):
         lint_obj._load()
         return lint_obj.broken_links()
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_404_url_produces_one_warning(self, mock_head):
         """A single 404 URL in a markdown file produces one warning citing file:line."""
         dead = "https://example.com/dead"
@@ -67,7 +67,7 @@ class TestLintBrokenLinks(TestLint):
         assert "docs/dead.md:1" in dead_warnings[0]
         assert result["failed"] == []
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_200_url_does_not_warn(self, mock_head):
         """A 200 URL produces no warning for that URL."""
         url = "https://example.com/ok"
@@ -78,7 +78,7 @@ class TestLintBrokenLinks(TestLint):
 
         assert not any(url in w for w in result["warned"])
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_network_error_does_not_warn(self, mock_head):
         """Network exceptions are silently passed (strict-404 semantics)."""
         url = "https://example.com/unreachable"
@@ -89,7 +89,7 @@ class TestLintBrokenLinks(TestLint):
 
         assert result["warned"] == []
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_500_does_not_warn(self, mock_head):
         """Non-404 error responses are silently passed."""
         url = "https://example.com/oops"
@@ -120,7 +120,7 @@ class TestLintBrokenLinks(TestLint):
         ignored_tests = [name for name, _ in lint_obj.ignored]
         assert "broken_links" in ignored_tests
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_ignore_url_prefix(self, mock_head):
         """URLs matching an entry in ``lint.broken_links`` are reported as ignored, not warned, and are not fetched."""
         dead = "https://ignore.me/path"
@@ -142,7 +142,7 @@ class TestLintBrokenLinks(TestLint):
         called_urls = [c.args[0] for c in mock_head.call_args_list if c.args]
         assert dead not in called_urls
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_ignore_markdown_file(self, mock_head):
         """Markdown files listed in ``lint.broken_links`` are skipped entirely."""
         dead = "https://example.com/dead"
@@ -164,7 +164,7 @@ class TestLintBrokenLinks(TestLint):
         called_urls = [c.args[0] for c in mock_head.call_args_list if c.args]
         assert dead not in called_urls
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_same_dead_url_twice_produces_two_warnings_one_request(self, mock_head):
         """Duplicate dead URL across two files -> two warnings, but only one HTTP call for that URL."""
         dead = "https://example.com/dead"
@@ -182,7 +182,7 @@ class TestLintBrokenLinks(TestLint):
         dead_calls = [c for c in mock_head.call_args_list if c.args and c.args[0] == dead]
         assert len(dead_calls) == 1
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_two_dead_urls_on_same_line(self, mock_head):
         """Two URLs on the same line each get a warning citing the same line number."""
         url_a = "https://example.com/a"
@@ -213,7 +213,7 @@ class TestLintBrokenLinks(TestLint):
     # ------------------------------------------------------------------
     PROBE_URL = "https://nf-co.re/testpipeline/"
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_pre_release_demotes_nf_core_re_404_to_ignored(self, mock_head):
         """Probe URL 404 + 404 on ``https://nf-co.re/<short>/...`` -> ignored, not warned."""
         pre_release_url = "https://nf-co.re/testpipeline/results"
@@ -225,7 +225,7 @@ class TestLintBrokenLinks(TestLint):
         assert not any(pre_release_url in w for w in result["warned"])
         assert any(pre_release_url in m and "Pre-release" in m for m in result["ignored"])
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_pre_release_does_not_demote_unrelated_404(self, mock_head):
         """Probe URL 404 (pre-release) + 404 on an unrelated URL -> still warned."""
         unrelated = "https://example.com/dead"
@@ -236,7 +236,7 @@ class TestLintBrokenLinks(TestLint):
 
         assert any(unrelated in w for w in result["warned"])
 
-    @patch("nf_core.pipelines.lint.broken_links.requests.head")
+    @patch("nf_core.pipelines.lint.broken_links.requests.Session.head")
     def test_released_pipeline_warns_on_nf_core_re_404(self, mock_head):
         """Probe URL 200 (released) + 404 on ``https://nf-co.re/<short>/...`` -> still warned."""
         sub_url = "https://nf-co.re/testpipeline/results"
