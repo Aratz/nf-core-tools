@@ -1,4 +1,6 @@
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +9,7 @@ import yaml
 
 import nf_core.pipelines.lint
 
+from ...utils import create_tmp_pipeline
 from ..test_lint import TestLint
 
 
@@ -44,12 +47,35 @@ def _set_dead(mock_head, mock_get, dead_urls: set[str]) -> None:
 
 
 class TestLintBrokenLinks(TestLint):
+    """Broken-links lint tests.
+
+    Creating the nf-core template pipeline is expensive (a full
+    ``PipelineCreate().init_pipeline()`` with network access). Since every test
+    only reads from the pristine pipeline and then operates on its own
+    ``shutil.copytree`` copy, the template is built once for the whole class in
+    ``setUpClass`` instead of once per test in ``setUp``.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._shared_tmp_dir, _, _, cls._shared_pipeline_dir = create_tmp_pipeline()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls._shared_tmp_dir, ignore_errors=True)
+
     def setUp(self) -> None:
-        super().setUp()
+        # Give each test its own isolated copy of the shared template pipeline:
+        # tests mutate files and ``.nf-core.yml`` in this copy.
+        self.tmp_dir = Path(tempfile.mkdtemp())
+        self.pipeline_dir = self._shared_pipeline_dir
         self.new_pipeline = self._make_pipeline_copy()
         self.nf_core_yml_path = Path(self.new_pipeline) / ".nf-core.yml"
         with open(self.nf_core_yml_path) as f:
             self.nf_core_yml = yaml.safe_load(f)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def _write_md(self, relpath: str, content: str) -> Path:
         path = Path(self.new_pipeline) / relpath
@@ -147,7 +173,7 @@ class TestLintBrokenLinks(TestLint):
         with open(self.nf_core_yml_path, "w") as f:
             yaml.safe_dump(self.nf_core_yml, f)
 
-        lint_obj = nf_core.pipelines.lint.PipelineLint(self.new_pipeline)
+        lint_obj = nf_core.pipelines.lint.PipelineLint(self.new_pipeline, key=["broken_links"])
         lint_obj._load()
         lint_obj._lint_pipeline()
 
