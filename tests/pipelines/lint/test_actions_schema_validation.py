@@ -1,5 +1,7 @@
 from pathlib import Path
+from unittest import mock
 
+import requests
 import yaml
 
 import nf_core.pipelines.lint
@@ -60,3 +62,16 @@ class TestLintActionsSchemaValidation(TestLint):
             "Workflow validation failed for awstest.yml: Additional properties are not allowed ('not_jobs' was unexpected)"
             in results["failed"][0]
         )
+
+    def test_actions_schema_validation_timeout_warns(self):
+        """A timeout when fetching the schema should result in a warning, not a hang or crash"""
+
+        lint_obj = nf_core.pipelines.lint.PipelineLint(self.new_pipeline)
+        lint_obj._load()
+
+        with mock.patch("requests.get", side_effect=requests.exceptions.Timeout("timed out")) as mock_get:
+            results = lint_obj.actions_schema_validation()
+
+        assert mock_get.call_args.kwargs["timeout"] == 10
+        assert results["failed"] == []
+        assert "Failed to fetch schema" in results["warned"][0]

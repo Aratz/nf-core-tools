@@ -28,7 +28,12 @@ def actions_schema_validation(self) -> dict[str, list[str]]:
     action_workflows = list(Path(self.wf_path).glob(".github/workflows/*.y*ml"))
 
     # Load the GitHub workflow schema
-    r = requests.get("https://www.schemastore.org/github-workflow", allow_redirects=True)
+    try:
+        r = requests.get("https://www.schemastore.org/github-workflow", allow_redirects=True, timeout=10)
+    except requests.exceptions.RequestException as e:
+        # Timeouts and connection errors should not block or fail linting
+        warned.append(f"Failed to fetch schema from `https://www.schemastore.org/github-workflow`: {e}")
+        return {"passed": passed, "failed": failed, "warned": warned}
     # handle "Service Unavailable" error
     if r.status_code not in [200, 301]:
         warned.append(
